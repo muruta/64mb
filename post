@@ -1,0 +1,98 @@
+64MB内存的VPS上搭建WordPress，这显然是一件让人非常捉急的事情，众多的Web环境一键安装包一般只支持最小128MB内存。考虑到内存只有64MB，Apache和MySQL就不用想了；HTTP服务器可以用Lighttpd或Nginx代替，数据库也可以使用轻量级的SQLite。
+
+考虑到Lighttpd官方有这么一句：
+
+NOTE: url rewriting does not work within a $HTTP["url"] conditional, but fixed in v1.4.34 (see #2526).
+链接重写（伪静态）的规则，在不同的版本之间有差异；再考虑目前Nginx算是比较主流的。所以最终的搭建方案就出炉了：
+
+系统：Debian 7.0 x86 minimal；
+HTTP服务器：Nginx + PHP；
+数据库：SQLite。
+那么咱们就开始吧。
+
+添加最新版本的源
+也许随着时间的推移，安装的软件包版本会有所变化，本篇教程的设置可能有些不同。我这里安装之后的PHP版本为5.4，Nginx版本为1.8。
+
+echo deb http://packages.dotdeb.org wheezy all >> /etc/apt/sources.list
+echo deb-src http://packages.dotdeb.org wheezy all >> /etc/apt/sources.list
+wget http://www.dotdeb.org/dotdeb.gpg
+apt-key add dotdeb.gpg && rm dotdeb.gpg
+apt-get update
+安装软件包
+apt-get install sqlite3
+apt-get install nginx
+apt-get install php5-fpm php5-curl php5-gd php5-imap php5-sqlite php5-xmlrpc
+计划目录、配置文件
+计划一下网站文件和数据库存放的目录：
+
+mkdir -p /home/64mb/web
+mkdir /home/64mb/db
+添加虚拟主机配置文件：
+
+wget -O /etc/nginx/sites-available/default http://x.weishimi.com/64mb/conf/default.conf
+wget -P /etc/nginx/sites-enabled http://x.weishimi.com/64mb/conf/64mb.wp.conf
+再编辑一下该配置文件：
+
+vi /etc/nginx/sites-enabled/64mb.wp.conf
+在第3行修改域名；在第10、22行修改站点文件目录；在第17行修改数据库文件目录。
+
+重载Nginx：
+
+nginx -t
+nginx -s reload
+配置PHP：
+
+vi /etc/php5/fpm/php.ini
+找到cgi.fix_pathinfo=1这一行，修改1为0，并去掉行首的分号。
+
+vi /etc/php5/fpm/pool.d/www.conf
+修改pm = dynamic为pm = static；
+
+修改pm.max_children = 5为pm.max_children = 1。
+
+重载PHP-FPM：
+
+service php5-fpm restart
+到这里Web环境就已经搭建了起来，且新建了一个虚拟主机。
+
+安装WordPress
+下载并解压WordPress文件：
+
+apt-get install unzip
+cd /home/64mb/web
+wget http://cn.wordpress.org/latest-zh_CN.zip
+unzip *.zip
+mv wordpress/* ./
+rm -rf *.zip wordpress
+让WordPress支持SQLite数据库，插件SQLite Integration：
+
+cd /home/64mb/web
+wget https://downloads.wordpress.org/plugin/sqlite-integration.1.8.1.zip
+unzip *.zip
+mv sqlite-integration wp-content/plugins
+cp wp-content/plugins/sqlite-integration/db.php wp-content
+rm *.zip
+修改WordPress配置文件：
+
+cp wp-config-sample.php wp-config.php
+vi wp-config.php
+把下面几行注释或删除掉：
+
+define('DB_NAME', 'database_name_here');
+define('DB_USER', 'username_here');
+define('DB_PASSWORD', 'password_here');
+define('DB_HOST', 'localhost');
+替换或添加上：
+
+define('DB_FILE', '64mb');
+define('DB_DIR', '/home/64mb/db');
+重置站点目录、数据库目录用户和用户组：
+
+chown -R www-data.www-data /home/64mb
+浏览器中打开域名，填写博客名称等信息安装就可以了。
+
+安装之后有下面的提示，无视之（默认已经在虚拟主机配置文件中做了安全配置）：
+
+Your webserver doesn't seem to be Apache. So the database directory access restriction by the .htaccess file may not function. We strongly recommend that you should restrict the access to the directory /home/64mb/db/ in some other way.
+END..
+不出意外你的WordPress程序就已经运行在64MB内存的VPS上了！
